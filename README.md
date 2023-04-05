@@ -14,7 +14,7 @@ ___________
 
 RUNNING THE PROGRAM:
 
-To run, just open a terminal, go to the directory where you stored the file, and enter the command `python3 LLO_picket_fence.py` or `python3 LHO-picket-fence.py` depending on the file you downloaded. It is recommended to run `python3 LLO-Server.py` before running the LLO/LHO Picket Fence due to the addition of EPICs variables to the code. This will simply initialize the EPICs variables with the desired starting values (such as -1). 
+To run, just open a terminal, go to the directory where you stored the file, and enter the command `python3 LLO_picket_fence.py` or `python3 LHO-picket-fence.py --epics` depending on the file you downloaded. It is recommended to run `python3 LLO-Server.py` before running the LLO/LHO Picket Fence due to the addition of EPICs variables to the code. This will simply initialize the EPICs variables with the desired starting values (such as -1). 
 
 You may run the Picket Fence with the default parameters already chosen by me (the optional parameters I have set are good fits). When an earthquake crosses our preset threshold, the background for the plot of the station measuring the earthquake will turn a certain color. If the background is gray, then the seismic activity from the picket station is deemed to be normal. If the background is yellow, the seismic activity from the picket station is deemed to be slightly abnormal. If the background is orange, the seismic activity from the picket station is deemed to be fairly abnormal. If the background is red, the seismic activity from the picket station is deemed to be extremely abnormal and is most likely a large earthquake. If the background is teal, then that picket station is suspected of being glitched and its data should be taken with a grain of salt until the picket station is no longer teal (it will not affect NETWORK EPICs variables). Channel AUX1 of the EPICs variables channels is being used to record the picket number which is glitching. Default value is -1. If a station is not being plotted, this is because it is currently down/not feeding us data.
 
@@ -25,6 +25,8 @@ ___________
 OPTIONAL PARAMETERS (optional reading):
 
 This program has many optional parameters and flags that can be changed:
+
+At LHO, the --epics flag must be included for Picket Fence to set EPICS channels.  Only one instance of Picket Fence should be run with the --epics flag.
 
 Stations can be changed by -s or --seedlink_streams \[SEEDLINK_STREAMS\]
 

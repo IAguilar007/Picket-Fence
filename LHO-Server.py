@@ -15,9 +15,9 @@ def func(n):  ## creates all our EPIC variables
         starter = f"STATION_0{i}_" if i < 10 else f"STATION_{i}_"
         dic[starter + "LON"] = {'prec' : 3}  ## longitude
         dic[starter + "LAT"] = {'prec' : 3}  ## latitude
-        dic[starter + "MIN"] = {'type' : 'int'}  ## min value of station
-        dic[starter + "MAX"] = {'type' : 'int'}  ## max value of station
-        dic[starter + "MEAN"] = {'type' : 'int'}  ## mean value of station
+        dic[starter + "MIN"] = {'prec' : 3}  ## min value of station
+        dic[starter + "MAX"] = {'prec' : 3}  ## max value of station
+        dic[starter + "MEAN"] = {'prec' : 3}  ## mean value of station
         dic[starter + "ID"] = {'type' : 'int'}  ## hex value of string
         dic[starter + "NAME"] = {'type' : 'str'}  ## string version of ID
         dicts.append(dic)

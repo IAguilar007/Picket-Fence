@@ -11,6 +11,7 @@ import warnings
 warnings.filterwarnings("ignore", "Badly*")  # suppresses warning calls from lsim filter function
 
 import matplotlib
+from epics import caput
 
 # Set the backend for matplotlib.
 matplotlib.use("TkAgg")
@@ -136,7 +137,7 @@ class SeedlinkPlotter(tkinter.Tk):
     """
 
     def __init__(self, stream=None, events=None, myargs=None, lock=None,
-                 trace_ids=None, *args, **kwargs):
+                 trace_ids=None, send_epics=False, *args, **kwargs):
         tkinter.Tk.__init__(self, *args, **kwargs)
         self.wm_title("seedlink-plotter {}".format(myargs.seedlink_server))
         self.focus_set()
@@ -170,6 +171,7 @@ class SeedlinkPlotter(tkinter.Tk):
         self.ids = trace_ids
         self.threshold = args.threshold
         self.lookback = args.lookback
+        self.send_epics = send_epics
         # Regular colors: Black, Red, Blue, Green
         self.color = ('#000000', '#e50000', '#0000e5', '#448630')
 
@@ -229,8 +231,8 @@ class SeedlinkPlotter(tkinter.Tk):
             Filter=(num,den)
             for trace in stream:
                 dt = trace.stats.delta
-                totalDuration = len(trace.data) * dt
-                T=np.arange(0.0, totalDuration, dt)
+                T=np.arange(0.0, len(trace.data))
+                T *= dt
                 trace.data -= np.mean(trace.data)
                 tout, yout, _ =signal.lsim(Filter, trace.data, T, X0=None)
                 trace.data = yout
@@ -253,7 +255,7 @@ class SeedlinkPlotter(tkinter.Tk):
                     flat_start[j] = mean_val # Make array the mean value instead of 0 to keep the intereface from zooming in too far
                 trace.data[0:flat_len] = flat_start[0:flat_len]
                 max_val = max(max(trace.data[-int(looking):]), -min(trace.data[-int(looking):]))
-                length = min(len(trace.data), trace.stats.sampling_rate * 60 * 15)  ## ensures at most 15 minutes of data
+                length = int(min(len(trace.data), trace.stats.sampling_rate * 60 * 15))  ## ensures at most 15 minutes of data
                 max_val_over_trace = max(max(trace.data[:length]), -min(trace.data[:length]))  ## grabs max over most recent 15 minutes
                 if max_val > 50000:  ## potential glitch
                     if trace_get_name(trace) not in POTENTIAL_GLITCHES:
@@ -304,20 +306,26 @@ class SeedlinkPlotter(tkinter.Tk):
             if len(trace.data) in [2, 4]:
                 stream.remove(trace)
                 i = indicies[trace.stats.station]
-                starter = f"H1:SEI-USGS_STATION_0{i}_"
-                subprocess.Popen(["caput", starter + "MIN", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.Popen(["caput", starter + "MAX", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.Popen(["caput", starter + "MEAN", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if self.send_epics:
+                    starter = f"H1:SEI-USGS_STATION_0{i}_"
+                    caput(starter + "MIN", -1)
+                    caput(starter + "MAX", -1)
+                    caput(starter + "MEAN", -1)
         if len(POTENTIAL_GLITCHES) == 1:  ## if station is glitching, dont display EPICs variables
             trace_name = POTENTIAL_GLITCHES[0]
             i = indicies[trace_name]
-            ## update AUX1 channel to hold picket number that is glitching
-            subprocess.Popen(["caput", "H1:SEI-USGS_NETWORK_AUX1", f"{i}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if self.send_epics:
+                ## update AUX1 channel to hold picket number that is glitching
+                caput("H1:SEI-USGS_NETWORK_AUX1", i)
         elif len(POTENTIAL_GLITCHES) > 1:  ## if multiple "glitches", they are probably not glitching (very large EQ??)
-            subprocess.Popen(["caput", "H1:SEI-USGS_NETWORK_AUX1", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            POTENTIAL_GLITCHES.clear() ## since they aren't glitching, remove them from list
+            if self.send_epics:
+                caput("H1:SEI-USGS_NETWORK_AUX1", -1)
+            POTENTIAL_GLITCHES.clear()  # since they aren't glitching, remove them from list
+        else:  # no potential glitches
+            if self.send_epics:
+                caput("H1:SEI-USGS_NETWORK_AUX1", -1)
         # Change equal_scale to False if auto-scaling should be turned off
-        stream.plot(fig=fig, method="fast", draw=False, equal_scale=True,
+        stream.plot(fig=fig, method="fast", draw=False, equal_scale=False,
                     size=(self.args.x_size, self.args.y_size), title="",
                     color='Blue', tick_format=self.args.tick_format,
                     number_of_ticks=self.args.time_tick_nb, min_bound=self.threshold)
@@ -420,17 +428,19 @@ class SeedlinkPlotter(tkinter.Tk):
                 idx = i
                 max_val = abs(best)
 
-        subprocess.Popen(["caput", "H1:SEI-USGS_NETWORK_PEAK", f"{max_val}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", "H1:SEI-USGS_NETWORK_STATION_NUM", f"{indicies[stream[idx].stats.station]}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", "H1:SEI-USGS_NETWORK_STATION_NAME", f"{stream[idx].stats.station}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if self.send_epics:
+            caput("H1:SEI-USGS_NETWORK_PEAK", max_val)
+            caput("H1:SEI-USGS_NETWORK_STATION_NUM", indicies[stream[idx].stats.station])
+            caput("H1:SEI-USGS_NETWORK_STATION_NAME", f"{stream[idx].stats.station}")
 
         for trace in stream:
             i = indicies[trace.stats.station]
             starter = f"H1:SEI-USGS_STATION_0{i}_"
             cur_data = trace.data[-trace.stats.numsamples:]
-            subprocess.Popen(["caput", starter + "MIN", f"{np.min(cur_data)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  ## try different min method
-            subprocess.Popen(["caput", starter + "MAX", f"{np.max(cur_data)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  ## try different max method
-            subprocess.Popen(["caput", starter + "MEAN", f"{np.mean(cur_data)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  ## try different mean method
+            if self.send_epics:
+                subprocess.Popen(["caput", starter + "MIN", f"{np.min(cur_data)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  ## try different min method
+                subprocess.Popen(["caput", starter + "MAX", f"{np.max(cur_data)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  ## try different max method
+                subprocess.Popen(["caput", starter + "MEAN", f"{np.mean(cur_data)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  ## try different mean method
         fig.canvas.draw()
 
 
@@ -653,6 +663,9 @@ def main():
     parser.add_argument('-v', '--verbose', default=False,
                         action="store_true", dest="verbose",
                         help='show verbose debugging output')
+    parser.add_argument('--epics', default=False,
+                        action="store_true", dest="epics",
+                        help='set EPICS variables in IOC')
 
     # parse the arguments
     args = parser.parse_args()
@@ -677,19 +690,19 @@ def main():
         loglevel = logging.CRITICAL
     logging.basicConfig(level=loglevel)
 
-    i = 1
-    pref = "H1:SEI-USGS_"
-    for stat in LHO:
-        starter = f"STATION_0{i}_"
-        subprocess.Popen(["caput", pref + starter + "LAT", f"{LHO[stat][0]}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", pref + starter + "LON", f"{LHO[stat][1]}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", pref + starter + "MIN", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", pref + starter + "MAX", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", pref + starter + "MEAN", "-1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", pref + starter + "ID", f"{ID_Creator(stat)}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.Popen(["caput", pref + starter + "NAME", f"{stat}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        i += 1
-
+    if args.epics:
+        i = 1
+        pref = "H1:SEI-USGS_"
+        for stat in LHO:
+            starter = f"STATION_0{i}_"
+            caput(pref + starter + "LAT", LHO[stat][0])
+            caput(pref + starter + "LON", LHO[stat][1])
+            caput(pref + starter + "MIN", -1)
+            caput(pref + starter + "MAX", -1)
+            caput(pref + starter + "MEAN", -1)
+            caput(pref + starter + "ID", ID_Creator(stat))
+            caput(pref + starter + "NAME", f"{stat}")
+            i += 1
 
     now = UTCDateTime()
     stream = Stream()
@@ -716,7 +729,7 @@ def main():
     sleep(2)
 
     # Wait few seconds to get data for the first plot
-    master = SeedlinkPlotter(stream=stream, events=events, myargs=args, lock=lock, trace_ids=ids)
+    master = SeedlinkPlotter(stream=stream, events=events, myargs=args, lock=lock, trace_ids=ids, send_epics=args.epics)
     master.mainloop()
 
 
