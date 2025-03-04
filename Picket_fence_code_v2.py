@@ -79,6 +79,9 @@ import logging
 import numpy as np
 import json
 
+import os
+
+pathname=os.path.dirname(os.path.realpath(__file__))+'/'
 last_process_gps = 0
 
 OBSPY_VERSION = [int(x) for x in OBSPY_VERSION.split(".")[:2]]
@@ -494,7 +497,7 @@ class SeedlinkPlotter(tkinter.Tk):
             ]
         self.threshold_color_state=sorted(threshold_color_state,key=lambda tup: tup[0],reverse=True)
         
-        with open('picket_fence_styles.json','r') as f: #TODO: make it not load ALL styles.
+        with open(pathname+'picket_fence_styles.json','r') as f: #TODO: make it not load ALL styles.
             self.color_themes=json.load(f)
         self.current_style=self.color_themes["Anderson"]
         self.current_style_index=0; #TODO: change this so it dynamically picks the first style 
@@ -761,7 +764,7 @@ def initEpics(picket_dict, prefix):
 def load_pickets(picket_list):
     pickets=dict()
     ii=1
-    with open('possible_stations.json','r') as f:
+    with open(pathname+'possible_stations.json','r') as f:
         data=json.load(f)
     for station in picket_list:
         if station in data.keys():

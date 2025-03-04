@@ -100,7 +100,7 @@
         "MSO":{
             "Latitude":46.829,
             "Longitude":-113.941,
-            "Channel":"US_MSO:00BHZ",
+            "Channel":"US_MSO:00HHZ",
             "PreferredServer":"137.227.252.145:18000"
         	},
         
@@ -135,7 +135,7 @@
         "TEIG":{
             "Latitude":20.226,
             "Longitude":-88.276,
-            "Channel":"IU_TEIG:00HHZ",
+            "Channel":"IU_TEIG:00BHZ",
             "PreferredServer":"137.227.252.145:18000"
         	},
         	
