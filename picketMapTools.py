@@ -110,6 +110,7 @@ class picketMap():
         #ax.add_feature(cfeature.OCEAN.with_scale('50m'))
         ax.add_feature(cfeature.LAND.with_scale('50m'),facecolor='white')
         ax.add_feature(cfeature.BORDERS.with_scale('50m'))
+        ax.add_feature(cfeature.STATES)
         
         #Add circles to reference distances on the map
         ax.add_geometries(self.circles, crs=ccrs.PlateCarree(), edgecolor='gray',facecolor="none", linestyle='--') 
