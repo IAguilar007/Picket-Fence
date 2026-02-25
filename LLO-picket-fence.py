@@ -35,7 +35,7 @@ def main():
         loglevel = logging.CRITICAL
     logging.basicConfig(level=loglevel)
     
-	#select the picket stations from the curated list of allowed stations - ELB 09/26/2023
+	#select the picket stations from the curated list of allowed stations - ELB 05/06/2025
     pickets= ["LRAL", "MIAR", "TGUH", "HKT", "DWPF","KVTX"]
     
     #specify the data for the observatory we want to monitor:

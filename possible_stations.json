@@ -100,7 +100,7 @@
         "MSO":{
             "Latitude":46.829,
             "Longitude":-113.941,
-            "Channel":"US_MSO:00BHZ",
+            "Channel":"US_MSO:00HHZ",
             "PreferredServer":"137.227.252.145:18000"
         	},
         
