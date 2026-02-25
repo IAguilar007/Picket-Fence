@@ -135,13 +135,41 @@
         "TEIG":{
             "Latitude":20.226,
             "Longitude":-88.276,
-            "Channel":"IU_TEIG:00HHZ",
+            "Channel":"IU_TEIG:00BHZ",
             "PreferredServer":"137.227.252.145:18000"
         	},
         	
         	"TGUH":{
            "Latitude":14.057,
            "Longitude":-87.273,
+           "Channel":"CU_TGUH:00BHZ",
+           "PreferredServer":"137.227.252.145:18000"
+       	},
+       	
+       	        "Chevron Jack/St.Malo":{
+           "Latitude":26.2350,
+           "Longitude":-91.2610,
+           "Channel":"CU_TGUH:00BHZ",
+           "PreferredServer":"137.227.252.145:18000"
+       	},
+       	
+       	        	"Shell Mars":{
+           "Latitude":28.1649,
+           "Longitude":-89.1736,
+           "Channel":"CU_TGUH:00BHZ",
+           "PreferredServer":"137.227.252.145:18000"
+       	},
+       	
+       	        	"BP Atlantis":{
+           "Latitude": 27.195278,
+           "Longitude":-90.026944,
+           "Channel":"CU_TGUH:00BHZ",
+           "PreferredServer":"137.227.252.145:18000"
+       	},
+       	
+       	       	        	"BP Thuderhorse":{
+           "Latitude": 28.1091,
+           "Longitude":-88.4944,
            "Channel":"CU_TGUH:00BHZ",
            "PreferredServer":"137.227.252.145:18000"
        	}
