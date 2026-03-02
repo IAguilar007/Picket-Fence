@@ -36,6 +36,9 @@ def main():
     logging.basicConfig(level=loglevel)
 	
 	#select the picket stations from the curated list of allowed stations - ELB 01/14/2024
+    # pickets= ["HLID", "NEW", "OTR", "MSO", "LAIR"]
+    # pickets= ["HLID", "NEW", "OTR", "MSO", "DING"]
+    # pickets= ["HWUT", "NEW", "OTR", "MSO", "DING"]
     pickets= ["HLID", "NEW", "OTR", "MSO", "DING"]
 	
 	#specify the data for the observatory we want to monitor:
