@@ -58,7 +58,11 @@ from obspy.core.event import Catalog
 from obspy.core.util import MATPLOTLIB_VERSION
 from obspy.clients.seedlink.seedlinkexception import SeedLinkException
 
+# For latency analysis
+from collections import deque
+import pandas as pd
 
+# For map plotting tools
 cartopyflag=1;
 try:
     import cartopy
@@ -67,7 +71,7 @@ except ImportError:
     cartopyflag=0;
     pass
 
-
+# For parallel computing tasks
 import threading
 from time import sleep
 from gwpy.time import tconvert
@@ -146,8 +150,7 @@ except AttributeError:
 class SeedlinkUpdater(SLClient):
     
     def __init__(self, stream, myargs=None, lock=None):
-        # loglevel NOTSET delegates messages to parent logger
-        super(SeedlinkUpdater, self).__init__(loglevel="NOTSET")
+        super(SeedlinkUpdater, self).__init__()
         self.stream = stream
         self.lock = lock
         self.args = myargs
@@ -217,7 +220,9 @@ class SeedlinkUpdater(SLClient):
         :return: Boolean true if connection to SeedLink server should be
             closed and session terminated, false otherwise.
         """
-
+        # store the received time for the packet 
+        received_time = UTCDateTime()
+        
         # check if not a complete packet
         if slpack is None or (slpack == SLPacket.SLNOPACKET) or \
                 (slpack == SLPacket.SLERROR):
@@ -233,12 +238,46 @@ class SeedlinkUpdater(SLClient):
             logging.info("Complete INFO:" + self.slconn.getInfoString())
             return self.infolevel is not None
 
-        # process packet data
+        # process packet data and collect its info for the latency records
         trace = slpack.get_trace()
         if trace is None:
             logging.info(
                 self.__class__.__name__ + ": blockette contains no trace")
-            return False
+            return False    
+        
+        #Archive latency records only if the data came after the program started
+        
+        packet_start = trace.stats.starttime
+        if tconvert(packet_start.isoformat()).gpsSeconds>int(start_time):
+            packet_end = trace.stats.endtime
+            network = str(trace.stats.network).upper()
+            station = str(trace.stats.station).upper()
+            location = str(trace.stats.location or "").upper()
+            channel = str(trace.stats.channel).upper()
+            server= str(self.slconn.get_sl_address())
+            trace_id = f"{network}.{station}.{location}.{channel}" 
+
+            record = {
+                "trace_id": trace_id,
+                "network": network,
+                "station": station,
+                "location": location,
+                "channel": channel,
+                "server":server,
+                "received_time_utc": received_time.isoformat(),
+                "packet_start_utc": packet_start.isoformat(),
+                "packet_end_utc": packet_end.isoformat(),
+                "sample_rate_hz": float(trace.stats.sampling_rate),
+                "number_of_samples": int(trace.stats.npts),
+                "packet_start_latency_seconds": float(received_time - packet_start),
+                "packet_end_latency_seconds": float(received_time - packet_end),
+                "pdf": get_packet_pdf(received_time, packet_start, float(trace.stats.sampling_rate), int(trace.stats.npts)),
+                }
+            
+            with self.lock:
+                # Add the packet info to the latency records
+                append_latency_record(record)
+            
 
         # new samples add to the main stream which is then trimmed
         with self.lock:
@@ -247,7 +286,8 @@ class SeedlinkUpdater(SLClient):
             self.stream.trim(starttime=UTCDateTime()-3600)
             for trace in self.stream:
                 trace.stats.processing = []
-        global last_process_gps
+                
+
         last_process_gps = tconvert('now').gpsSeconds
         return False
 
@@ -271,8 +311,9 @@ class SeedlinkUpdater(SLClient):
                 ids.append(".".join((net, sta, loc, cha)))
         ids.sort()
         return ids
+    
 class picketFenceArguments():
-    def __init__(self, stream_time=3600, backtrace_time=15*60, x_position=0, y_position=0, x_size=800, y_size=600, title_size=12, time_legend_size=10,
+    def __init__(self, stream_time=3600, backtrace_time=15*60, latency_resolution=1/10, max_latency_analysis=120, x_position=0, y_position=0, x_size=800, y_size=600, title_size=12, time_legend_size=10,
     tick_format='%H:%M:%S',time_tick_nb=5,threshold=500,lookback=120,update_time=1, min_scale=1000, fullscreen=False,verbose=False,send_epics=False,epics_prefix=None):
     
         #Plot format properties
@@ -295,7 +336,11 @@ class picketFenceArguments():
         self.threshold=threshold                # threshold in (nm/s) for determining the triggers for color changes    
         self.lookback=lookback                  # time (in seconds) that we analyze in search of earthquake signals
         self.update_time=update_time            # refresh rate (in seconds) of the graph
-    
+        
+        #Latency analysis properties
+        self.latency_resolution=latency_resolution      #Resolution for Cumulative distributions for timing analysis
+        self.max_latency_analysis=max_latency_analysis  #Maximum latency for latency analysis, anything above this will get lumped into "too big to matter"
+        
         #other arguments
         self.verbose=verbose                    # True toggles the debug log
         self.send_epics=send_epics              # True enables data logging into EPICS variables  
@@ -364,6 +409,7 @@ class filteredStream(Stream):
     #Function that updates the filtered Stream with new data from the rawStream that is connected to it
     def CollectAndAnalyze(self):
         #with self.lock:
+        
         for trace in self.rawStream.traces:
             if trace.id in self.getTraceIDs(): #if we have the trace in the filtered stream
                 oldEndtime=self.customMetadata[trace.id]['endtime']
@@ -389,7 +435,7 @@ class filteredStream(Stream):
                         self.customMetadata[newTrace.id]['endtime']=newTrace.stats.endtime
                         self.append(newTrace)
                     
-            else:#This trace is only present in the raw stream but has never been filtered
+            else: #This trace is only present in the raw stream but has never been filtered
                 newTrace=trace.copy()
                 self.customMetadata[trace.id]=dict()
                 self.FirstLowpass(newTrace)    
@@ -654,6 +700,16 @@ class SeedlinkPlotter(tkinter.Tk):
                     if trace_get_name(trace) in self.POTENTIAL_GLITCHES:
                         added_text=" |GLITCHING"
                     text.set_text(text.get_text()+" | "+ str(round_nm_to_microns(stream.customMetadata[trace.id]['Glitch_ABSMAX'],2))+u" \u03BCm/s"+added_text)
+                
+                #Add the latency information
+                latency_q = get_picket_quantile(trace.id, 0.95)
+                if latency_q==np.inf:
+                    latency_text=f"> {self.args.max_latency_analysis:.0f}"
+                else:
+                    latency_text=f"{latency_q:.1f}"
+                text.set_text(text.get_text()+"\n"+"95% Latency: " + latency_text + " s") # Make space in the box
+
+                
                 text.set_fontsize(self.args.title_size)
                 text.set_fontweight('bold')
                 text.set_x(0.05)#TODO: add this positioning to the default arguments that could be changed
@@ -735,6 +791,19 @@ def Reverse_ID(n):
         result += chr(int(s[i:i+2], 16))
     return result
 
+def convertSeedLinkID(s):
+    """Converts an ID in the format used to call from the picket fence into an seedlink-style ID"""
+    network=s.split("_")[0].upper()
+    info="".join(s.split("_")[1:])     #Here only in case there's an underscore in the station name
+    station=info.split(":")[0].upper()
+    info=info.split(":")[1]
+    location=info[0:-3]
+    channel=info[-3:].upper()
+    
+    return f"{network}.{station}.{location}.{channel}"
+    
+    
+
 start_time = "not started"
 
 def initEpics(picket_dict, prefix):
@@ -775,8 +844,66 @@ def load_pickets(picket_list):
         print(station+" is not on the list of curated picket stations")
     return pickets
 
+### Main functions for timing analysis ###
+def get_packet_pdf(received_time, packet_start, sample_rate, number_of_samples):
+
+    dt = 1.0 / sample_rate
+    first_latency = float(received_time - packet_start)
+
+    latencies = first_latency - np.arange(number_of_samples) * dt
+
+    pdf, _ = np.histogram(latencies, bins=latency_pdf["Histogram bins"] )
+
+    return pdf
+
+def append_latency_record(record):
+    """Append a latency record and update the aggregate latency PDF."""
+
+    trace_id = record["trace_id"]
+    packet_pdf = record["pdf"]
+
+    # If the deque is full, remove the oldest record first.
+    if len(latency_records) == latency_records.maxlen:
+        old_record = latency_records.popleft()
+
+        old_trace_id = old_record["trace_id"]
+        old_pdf = old_record["pdf"]
+
+        latency_pdf[old_trace_id] -= old_pdf
+
+    # Add the new packet's contribution.
+    if trace_id not in latency_pdf:
+        latency_pdf[trace_id] = packet_pdf.copy()
+    else:
+        latency_pdf[trace_id] += packet_pdf
+
+    # Finally store the record.
+    latency_records.append(record)
+
+def get_picket_quantile(trace_id, quantile):
+    
+    if trace_id not in latency_pdf.keys():
+        return np.nan
+    
+    pdf = latency_pdf[trace_id]
+    
+    total = np.sum(pdf)
+    if total == 0:
+        return np.nan
+    cdf = np.cumsum(pdf) / total
+    bin_index = np.searchsorted(cdf, quantile)
+  
+    return latency_pdf["Histogram bins"][bin_index+1] # Round the latency up, better be conservative
+    
 class PicketFence():
     def __init__(self, picket_list, myargs, epics_prefix,observatory_info=None):
+        
+        #Initialize global variables that will keep track of the health of the picket fence streams
+        global last_process_gps
+        global latency_records 
+        global latency_pdf
+
+        
         self.args=myargs
         self.pickets=load_pickets(picket_list)
         self.stop_flag = False
@@ -787,6 +914,9 @@ class PicketFence():
             assert type(epics_prefix) == str , "the epics prefix should be a string"
         self.args.epics_prefix=epics_prefix
         self.observatory_info=observatory_info
+        
+        latency_records=deque(maxlen=650 * len(self.pickets)) # This ensures we have about 1.2 hours of data for HHZ stations                    
+        latency_pdf={"Histogram bins": np.append( np.arange(0.0,self.args.max_latency_analysis,self.args.latency_resolution), np.Inf ) }
         
     def run(self):
         global start_time
@@ -828,14 +958,19 @@ class PicketFence():
             self.filtStream=filteredStream(self.stream, myargs=self.args)  
             self.master = SeedlinkPlotter(stream=self.filtStream, picket_dict=self.pickets, events=self.events, myargs=self.args, lock=self.lock, leave=self.leave) #, send_epics=args.epics)     
             
-
+            # Change pallette
             self.style_button=ttk.Button(self.master, text="Change Palette",command=lambda: threading.Thread(target=self.master.change_styles(self.style_button)).start())
             self.style_button.pack(side=tkinter.RIGHT)
             
+            # Map plotting
             if cartopyflag==1:
-                self.picketMap=picketMap(picket_dict=self.pickets,central_station=self.observatory_info)  
+                self.picketMap=picketMap(picket_dict=self.pickets,central_station=self.observatory_info)
                 self.map_button=ttk.Button(self.master, text="Map",command=lambda: threading.Thread(target=self.picketMap.generate_plot()).start())
-                self.map_button.pack()
+                self.map_button.pack(side=tkinter.RIGHT)
+            
+            # Latency stats
+            self.save_latency_button=ttk.Button(self.master, text="Save Latencies",command=lambda: threading.Thread(target=self.get_save_latency_dataframe()).start())
+            self.save_latency_button.pack(side=tkinter.LEFT)
             
             #Monitor the connections to seedlink
             self.watchers=[threading.Thread(target=self.watcher, args=(client.run,), daemon=True) for client in self.seedlink_clients] ## threads to monitor the connection with IRIS
@@ -869,3 +1004,35 @@ class PicketFence():
                 # thread.join()
                 # self.master.quit()  ## letting main thread break out of mainloop
                 # ## break  ## allowing watching_conn to leave scope (terminating)
+                
+    ## FUNCTIONS FOR TIMING ANALYSIS
+    def get_save_latency_dataframe(self):
+        """Return a thread-safe copy of all packet records."""
+        with self.lock:
+            records_copy = list(latency_records)
+            
+            if not records_copy:
+                print("No latency data to save!")
+                return pd.DataFrame()
+            
+        latency_df= pd.DataFrame(records_copy,columns=latency_records[0].keys(),)
+        
+        filepath="./latency_data/"
+        os.makedirs(filepath, exist_ok=True)
+        filename=filepath+f"{UTCDateTime()}_{next(iter(self.observatory_info.keys()))}_latency_data.csv" #Assumes that the first key is the observatory name
+        
+        latency_df.to_csv(filename, index=False)
+        print("Latency data successfully exported to " + filename)
+        
+    def get_picket_fence_quantile(self, quantile):
+        
+        picket_ids=[convertSeedLinkID( self.pickets[station]["Channel"] ) for station in self.pickets.keys()]
+        quantiles=[get_picket_quantile(picket,quantile) for picket in picket_ids]
+        
+        return dict(zip(picket_ids, quantiles))
+        
+        
+    
+
+    
+    
