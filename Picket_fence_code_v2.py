@@ -287,7 +287,7 @@ class SeedlinkUpdater(SLClient):
             for trace in self.stream:
                 trace.stats.processing = []
                 
-
+        global last_process_gps
         last_process_gps = tconvert('now').gpsSeconds
         return False
 
