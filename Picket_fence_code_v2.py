@@ -950,6 +950,7 @@ class PicketFence():
                 self.seedlink_clients[ii].multiselect = server_dict[server_name]
                 self.seedlink_clients[ii].begin_time = (self.startnow - 1500).format_seedlink() #TODO make it not 2000 seconds flat
                 self.seedlink_clients[ii].initialize()
+                self.seedlink_clients[ii].slconn.timeout = 30.0  # seconds
                 print('Downloading from server:  ', server_name)
                 print(server_dict[server_name])
                 ii+=1
